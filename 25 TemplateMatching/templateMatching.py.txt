@@ -1,0 +1,151 @@
+import cv2
+import os
+import tkinter as tk
+from tkinter import filedialog
+from PIL import Image, ImageTk
+import numpy as np
+# Variables globales
+cap = None
+frame_gris = None
+rutas_imagenes = []
+imagen_seleccionada = None
+puerto_camara = 0
+
+# Función para realizar coincidencia de plantillas
+def coincidencia_de_plantilla():
+    if imagen_seleccionada is not None:
+        plantilla = cv2.imread(imagen_seleccionada, cv2.IMREAD_COLOR)
+        plantilla_gris = cv2.cvtColor(plantilla, cv2.COLOR_BGR2GRAY)
+
+        # Realizar coincidencia de plantilla en el frame actual
+        resultado = cv2.matchTemplate(frame_gris, plantilla_gris, cv2.TM_CCOEFF_NORMED)
+        _, _, _, max_loc = cv2.minMaxLoc(resultado)
+
+        return resultado, max_loc
+    else:
+        return None, None
+
+# Función para procesar el siguiente frame de la cámara
+def procesar_frame():
+    ret, frame = cap.read()
+
+    if ret:
+        global frame_gris
+        frame_gris = cv2.cvtColor(frame, cv2.COLOR_BGR2GRAY)
+
+        # Mostrar el frame en la interfaz gráfica
+        mostrar_frame()
+
+        # Llamar a esta función nuevamente después de un breve intervalo
+        root.after(10, procesar_frame)
+
+# Función para mostrar el frame en la interfaz gráfica
+def mostrar_frame():
+    if cap.isOpened():
+        ret, frame = cap.read()
+        if ret:
+            frame = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
+            img = Image.fromarray(frame)
+            img = ImageTk.PhotoImage(img)
+            panel.img = img
+            panel.config(image=img)
+    else:
+        panel.config(text="Error al abrir la cámara")
+
+# Función para comparar imágenes
+def comparar_imagenes():
+    # Realizar coincidencia de plantilla solo con la imagen seleccionada
+    resultado, max_loc = coincidencia_de_plantilla()
+
+    # Si el valor máximo está por encima del umbral, mostrar el resultado
+    if resultado is not None and umbral_var.get() < resultado[max_loc[1], max_loc[0]]:
+        texto_resultado.set("SI hay coincidencia")
+    else:
+        texto_resultado.set("NO hay coincidencia")
+
+# Función para seleccionar la carpeta de imágenes
+def seleccionar_carpeta():
+    ruta_carpeta = filedialog.askdirectory()
+    if ruta_carpeta:
+        global rutas_imagenes
+        rutas_imagenes = [os.path.join(ruta_carpeta, archivo) for archivo in os.listdir(ruta_carpeta) if archivo.endswith(('.png', '.jpg', '.jpeg'))]
+
+        # Activar botones después de seleccionar la carpeta
+        boton_seleccionar_imagen.config(state=tk.NORMAL)
+        boton_siguiente_imagen.config(state=tk.NORMAL)
+        boton_iniciar_camara.config(state=tk.NORMAL)
+        boton_comparar.config(state=tk.NORMAL)
+
+# Función para iniciar la cámara
+def iniciar_camara():
+    global cap
+    cap = cv2.VideoCapture(puerto_camara)
+    if not cap.isOpened():
+        texto_resultado.set("Error al abrir la cámara")
+    else:
+        texto_resultado.set("Cámara iniciada")
+        procesar_frame()
+
+# Función para seleccionar una imagen específica
+# Función para seleccionar una imagen específica
+def seleccionar_imagen():
+    global imagen_seleccionada
+    imagen_seleccionada = filedialog.askopenfilename(filetypes=[("Imagen", "*.png;*.jpg;*.jpeg")])
+    etiqueta_nombre_imagen.config(text="Imagen seleccionada: " + os.path.basename(imagen_seleccionada))
+    boton_comparar.config(state=tk.NORMAL)
+
+
+# Función para pasar a la siguiente imagen en la carpeta
+def siguiente_imagen():
+    global imagen_seleccionada
+    if rutas_imagenes:
+        index_actual = rutas_imagenes.index(imagen_seleccionada) if imagen_seleccionada in rutas_imagenes else -1
+        siguiente_index = (index_actual + 1) % len(rutas_imagenes)
+        imagen_seleccionada = rutas_imagenes[siguiente_index]
+        etiqueta_nombre_imagen.config(text=os.path.basename(imagen_seleccionada))
+
+# Crear la interfaz gráfica
+root = tk.Tk()
+root.title("Coincidencia de Plantillas")
+root.geometry("600x800")
+
+
+# Configuración del umbral
+umbral_var = tk.DoubleVar()
+umbral_var.set(0.7)
+
+# Etiqueta de nombre de imagen
+etiqueta_nombre_imagen = tk.Label(root, text="Aqui se mostrara la imagen seleccionada")
+etiqueta_nombre_imagen.pack(pady=10)
+
+# Botones y etiquetas
+boton_seleccionar_carpeta = tk.Button(root, text="Seleccionar Carpeta", command=seleccionar_carpeta)
+boton_seleccionar_carpeta.pack(pady=10)
+
+boton_seleccionar_imagen = tk.Button(root, text="Seleccionar Imagen", command=seleccionar_imagen, state=tk.DISABLED)
+boton_seleccionar_imagen.pack(pady=10)
+
+boton_siguiente_imagen = tk.Button(root, text="Siguiente Imagen", command=siguiente_imagen, state=tk.DISABLED)
+boton_siguiente_imagen.pack(pady=10)
+
+boton_iniciar_camara = tk.Button(root, text="Iniciar Cámara", command=iniciar_camara, state=tk.DISABLED)
+boton_iniciar_camara.pack(pady=10)
+
+etiqueta_umbral = tk.Label(root, text="Umbral de coincidencia:")
+etiqueta_umbral.pack(pady=5)
+
+slider_umbral = tk.Scale(root, from_=0, to=1, resolution=0.01, orient=tk.HORIZONTAL, variable=umbral_var)
+slider_umbral.pack(pady=5)
+
+boton_comparar = tk.Button(root, text="Comparar", command=comparar_imagenes, state=tk.DISABLED)
+boton_comparar.pack(pady=10)
+
+texto_resultado = tk.StringVar()
+etiqueta_resultado = tk.Label(root, textvariable=texto_resultado)
+etiqueta_resultado.pack(pady=10)
+
+panel = tk.Label(root)
+panel.pack(padx=10, pady=10)
+
+# Iniciar el bucle de la interfaz gráfica
+root.mainloop()
